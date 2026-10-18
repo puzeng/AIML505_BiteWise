@@ -33,6 +33,20 @@ npm run dev
 
 Vite proxies `/api` to the API, so the browser calls same-origin `/api/...`.
 
+## Public site
+
+The classmate example at `https://clearpath-claims-knowledge-assistant.ai.studio/` is an Express server on Google Cloud Run. Google AI Studio assigns the `*.ai.studio` name when you publish. It is not an AWS App Runner hostname. App Runner is closed to new customers.
+
+This repo is set up the same way. `npm run build` writes the React app, and `npm start` serves that app and the `/api` routes from one process. The server listens on `process.env.PORT`.
+
+To publish a URL such as `https://bitewise-ai.ai.studio`:
+
+1. Open [Google AI Studio](https://aistudio.google.com/) in Build mode and import `https://github.com/puzeng/AIML505_BiteWise`.
+2. Choose Publish, then set the custom URL to `bitewise-ai` if that name is still free.
+3. Publish the app. AI Studio deploys it to Cloud Run and shows the live `https://bitewise-ai.ai.studio` address.
+
+That hostname can only be created from the Google account that owns the AI Studio app. A missing `GEMINI_API_KEY` still runs the deployed app in demo mode.
+
 ## Gemini and demo mode
 
 The model key stays on the server. Copy `.env.example` to `.env` in the repo root (or `server/.env`) and set:
@@ -55,7 +69,7 @@ When a key is set, the server still removes meals over the budget or missing a r
 | `npm run seed` | Resets and reloads the sample SQLite database |
 | `npm test` | Runs the API tests with `node:test` |
 | `npm run build` | Builds the client into `client/dist` |
-| `npm start` | Starts only the API |
+| `npm start` | Starts the API. After a build, it also serves the web app on `PORT` (8080 in Cloud Run, 3001 locally) |
 
 ## API
 

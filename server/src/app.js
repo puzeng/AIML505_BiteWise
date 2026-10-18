@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
 import { addFavorite, deleteFavorite, getMenuItem, listFavorites, listMenu, listRestaurants } from './db.js';
 import { hasGeminiKey } from './env.js';
@@ -5,32 +7,62 @@ import { GEMINI_MODEL } from './gemini.js';
 import { httpError, normalizeDietaryList, readBudget, readClientToken, readPositiveInt } from './preferences.js';
 import { buildRecommendations } from './recommendations.js';
 
+const API_CSP = "default-src 'none'; frame-ancestors 'none'";
+const PAGE_CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "script-src 'self'",
+  "style-src 'self' https://fonts.googleapis.com",
+  "font-src https://fonts.gstatic.com",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+].join('; ');
+
+function resolveClientDist(clientDist) {
+  if (!clientDist) return null;
+  const dist = path.resolve(clientDist);
+  if (!fs.existsSync(path.join(dist, 'index.html'))) {
+    throw new Error(`Client build not found at ${dist}. Run npm run build first.`);
+  }
+  return dist;
+}
+
 function asyncHandler(fn) {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 }
 
-export function createApp({ db, rankMeals } = {}) {
+export function createApp({ db, rankMeals, clientDist = null } = {}) {
   if (!db) throw new Error('createApp requires a database');
+  const dist = resolveClientDist(clientDist);
   const app = express();
   app.disable('x-powered-by');
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
+    const page = dist && !req.path.startsWith('/api') && req.path !== '/ping';
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy', page ? PAGE_CSP : API_CSP);
     next();
   });
   app.use(express.json({ limit: '32kb' }));
 
-  app.get('/', (_req, res) => {
-    res.json({
-      service: 'bitewise-ai',
-      message: 'API is running. Open the web app at http://localhost:5173.',
-      health: '/api/health',
-    });
+  app.get('/ping', (_req, res) => {
+    res.json({ ok: true });
   });
+
+  if (!dist) {
+    app.get('/', (_req, res) => {
+      res.json({
+        service: 'bitewise-ai',
+        message: 'API is running. Open the web app at http://localhost:5173.',
+        health: '/api/health',
+      });
+    });
+  }
 
   app.get('/api/health', (_req, res) => {
     res.json({
@@ -122,6 +154,13 @@ export function createApp({ db, rankMeals } = {}) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong. Please try again.' });
   });
+
+  if (dist) {
+    app.use(express.static(dist, { index: false, fallthrough: true }));
+    app.get(/^(?!\/api(?:\/|$)).*/, (_req, res) => {
+      res.sendFile(path.join(dist, 'index.html'));
+    });
+  }
 
   return app;
 }

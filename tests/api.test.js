@@ -370,6 +370,41 @@ test('recommendation and favorite requests reject invalid JSON and empty prompts
   }
 });
 
+test('a built client is served on page routes while the API stays JSON', async () => {
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'bitewise-dist-'));
+  fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><div id="root">BiteWise shell</div>');
+  const db = makeDb();
+  const app = createApp({ db, clientDist: dist });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const home = await fetch(`${base}/`);
+    const homeHtml = await home.text();
+    assert.equal(home.status, 200);
+    assert.match(homeHtml, /BiteWise shell/);
+    assert.match(home.headers.get('content-security-policy'), /fonts\.googleapis\.com/);
+
+    const favorites = await fetch(`${base}/favorites`);
+    assert.equal(favorites.status, 200);
+    assert.match(await favorites.text(), /BiteWise shell/);
+
+    const health = await send(base, '/api/health');
+    assert.equal(health.status, 200);
+    assert.equal(health.body.ok, true);
+    assert.equal(health.headers['content-security-policy'], "default-src 'none'; frame-ancestors 'none'");
+
+    const ping = await send(base, '/ping');
+    assert.equal(ping.status, 200);
+    assert.equal(ping.body.ok, true);
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    db.close();
+  }
+});
+
 test('client source does not embed a Gemini API key', () => {
   const root = path.join(process.cwd(), 'client');
   const files = [];
