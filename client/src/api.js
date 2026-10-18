@@ -1,3 +1,20 @@
+const CLIENT_KEY = 'bitewise-client';
+
+export function getClientToken() {
+  let token = localStorage.getItem(CLIENT_KEY);
+  if (!token || !/^[A-Za-z0-9_-]{16,64}$/.test(token)) {
+    token = crypto.randomUUID().replaceAll('-', '');
+    localStorage.setItem(CLIENT_KEY, token);
+  }
+  return token;
+}
+
+function withClient(options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set('x-bitewise-client', getClientToken());
+  return { ...options, headers };
+}
+
 async function request(path, options) {
   let response;
   try {
@@ -43,19 +60,19 @@ export function getMenuItem(id) {
 }
 
 export function getFavorites() {
-  return request('/favorites');
+  return request('/favorites', withClient());
 }
 
 export function createFavorite(menuItemId) {
-  return request('/favorites', {
+  return request('/favorites', withClient({
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ menuItemId }),
-  });
+  }));
 }
 
 export function removeFavorite(id) {
-  return request(`/favorites/${id}`, { method: 'DELETE' });
+  return request(`/favorites/${id}`, withClient({ method: 'DELETE' }));
 }
 
 export function getRecommendations(payload, signal) {

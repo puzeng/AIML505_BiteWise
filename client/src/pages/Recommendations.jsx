@@ -52,6 +52,14 @@ export function RecommendationsPage() {
       setStatus('error');
       return;
     }
+    if (values.maxBudget !== '') {
+      const budget = Number(values.maxBudget);
+      if (!Number.isFinite(budget) || budget < 0 || budget > 200) {
+        setError('Max budget must be a number from 0 to 200.');
+        setStatus('error');
+        return;
+      }
+    }
     setStatus('loading');
     setError('');
     setResult(null);
@@ -97,13 +105,13 @@ export function RecommendationsPage() {
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-5 rounded-3xl bg-white p-5 ring-1 ring-ink/10">
+      <form noValidate onSubmit={onSubmit} className="space-y-5 rounded-3xl bg-white p-5 ring-1 ring-ink/10">
         <div>
           <label htmlFor="prompt" className="text-sm font-semibold">What do you want?</label>
           <textarea
             id="prompt"
-            required
             maxLength={500}
+            aria-invalid={status === 'error' && !form.prompt.trim()}
             rows={4}
             value={form.prompt}
             onChange={(event) => {
@@ -119,6 +127,7 @@ export function RecommendationsPage() {
           <input
             id="maxBudget"
             type="number"
+            aria-invalid={status === 'error' && form.maxBudget !== '' && (Number(form.maxBudget) < 0 || Number(form.maxBudget) > 200)}
             inputMode="decimal"
             min="0"
             max="200"

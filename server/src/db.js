@@ -32,9 +32,10 @@ CREATE TABLE IF NOT EXISTS menu_items (
 CREATE TABLE IF NOT EXISTS favorites (
   id INTEGER PRIMARY KEY,
   menu_item_id INTEGER NOT NULL,
+  client_token TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (menu_item_id) REFERENCES menu_items(id),
-  UNIQUE (menu_item_id)
+  UNIQUE (client_token, menu_item_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_menu_restaurant ON menu_items(restaurant_id);
@@ -67,7 +68,25 @@ export function openDatabase(dbPath = DEFAULT_DB_PATH) {
   const db = new Database(dbPath);
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  scopeFavoritesToClient(db);
   return db;
+}
+
+function scopeFavoritesToClient(db) {
+  const columns = db.prepare('PRAGMA table_info(favorites)').all();
+  if (columns.some((column) => column.name === 'client_token')) return;
+  db.exec(`
+    CREATE TABLE favorites_scoped (
+      id INTEGER PRIMARY KEY,
+      menu_item_id INTEGER NOT NULL,
+      client_token TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (menu_item_id) REFERENCES menu_items(id),
+      UNIQUE (client_token, menu_item_id)
+    );
+    DROP TABLE favorites;
+    ALTER TABLE favorites_scoped RENAME TO favorites;
+  `);
 }
 
 export function resetAndSeed(db) {
@@ -160,7 +179,7 @@ export function getMenuItem(db, id) {
   return row ? parseMenuRow(row) : null;
 }
 
-export function listFavorites(db) {
+export function listFavorites(db, clientToken) {
   const rows = db.prepare(`
     SELECT
       f.id AS favorite_id,
@@ -181,8 +200,9 @@ export function listFavorites(db) {
     FROM favorites f
     JOIN menu_items m ON m.id = f.menu_item_id
     JOIN restaurants r ON r.id = m.restaurant_id
+    WHERE f.client_token = ?
     ORDER BY f.created_at DESC, f.id DESC
-  `).all();
+  `).all(clientToken);
   return rows.map((row) => ({
     id: row.favorite_id,
     menuItemId: row.id,
@@ -191,15 +211,17 @@ export function listFavorites(db) {
   }));
 }
 
-export function addFavorite(db, menuItemId) {
-  const info = db.prepare('INSERT INTO favorites (menu_item_id) VALUES (?)').run(menuItemId);
+export function addFavorite(db, menuItemId, clientToken) {
+  const info = db.prepare(
+    'INSERT INTO favorites (menu_item_id, client_token) VALUES (?, ?)',
+  ).run(menuItemId, clientToken);
   return db.prepare(`
     SELECT id, menu_item_id AS menuItemId, created_at AS createdAt
     FROM favorites WHERE id = ?
   `).get(info.lastInsertRowid);
 }
 
-export function deleteFavorite(db, id) {
-  const info = db.prepare('DELETE FROM favorites WHERE id = ?').run(id);
+export function deleteFavorite(db, id, clientToken) {
+  const info = db.prepare('DELETE FROM favorites WHERE id = ? AND client_token = ?').run(id, clientToken);
   return info.changes > 0;
 }

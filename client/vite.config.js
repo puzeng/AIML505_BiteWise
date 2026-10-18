@@ -8,6 +8,11 @@ export default defineConfig({
     host: 'localhost',
     port: 5173,
     strictPort: true,
+    headers: {
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

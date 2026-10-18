@@ -30,15 +30,23 @@ async function start(db, rankMeals) {
 async function send(base, urlPath, options = {}) {
   const response = await fetch(`${base}${urlPath}`, options);
   const body = await response.json();
-  return { status: response.status, body };
+  const headers = Object.fromEntries(response.headers.entries());
+  return { status: response.status, body, headers };
 }
 
-function postJson(base, urlPath, payload) {
+const CLIENT_A = 'client-token-aaaaaa';
+const CLIENT_B = 'client-token-bbbbbb';
+
+function postJson(base, urlPath, payload, headers = {}) {
   return send(base, urlPath, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(payload),
   });
+}
+
+function favoriteHeaders(token = CLIENT_A) {
+  return { 'x-bitewise-client': token };
 }
 
 test('health, restaurants, and menu routes return the sample catalog', async () => {
@@ -51,6 +59,8 @@ test('health, restaurants, and menu routes return the sample catalog', async () 
     assert.equal(health.body.rankingModel, 'gemini-3.8-flash');
     assert.equal(health.body.demoMode, !(process.env.GEMINI_API_KEY || '').trim());
     assert.equal(health.body.stack, undefined);
+    assert.equal(health.headers['x-content-type-options'], 'nosniff');
+    assert.equal(health.headers['x-frame-options'], 'DENY');
 
     const restaurants = await send(session.base, '/api/restaurants');
     assert.equal(restaurants.status, 200);
@@ -269,25 +279,31 @@ test('favorites persist, reject duplicates, and reject unknown meals', async () 
   const db = openDatabase(file);
   resetAndSeed(db);
   const schema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'favorites'").get().sql;
-  assert.match(schema, /UNIQUE \(menu_item_id\)/);
+  assert.match(schema, /UNIQUE \(client_token, menu_item_id\)/);
   const session = await start(db);
   try {
-    const created = await postJson(session.base, '/api/favorites', { menuItemId: 8 });
+    const missingClient = await postJson(session.base, '/api/favorites', { menuItemId: 8 });
+    assert.equal(missingClient.status, 400);
+
+    const created = await postJson(session.base, '/api/favorites', { menuItemId: 8 }, favoriteHeaders());
     assert.equal(created.status, 201);
     assert.equal(created.body.favorite.menuItem.name, 'Tofu Miso Soup');
 
-    const duplicate = await postJson(session.base, '/api/favorites', { menuItemId: 8 });
+    const duplicate = await postJson(session.base, '/api/favorites', { menuItemId: 8 }, favoriteHeaders());
     assert.equal(duplicate.status, 409);
     assert.match(duplicate.body.error, /already/);
 
-    const listed = await send(session.base, '/api/favorites');
+    const otherClient = await send(session.base, '/api/favorites', { headers: favoriteHeaders(CLIENT_B) });
+    assert.deepEqual(otherClient.body.favorites, []);
+
+    const listed = await send(session.base, '/api/favorites', { headers: favoriteHeaders() });
     assert.equal(listed.body.favorites.length, 1);
     assert.equal(listed.body.favorites[0].menuItemId, 8);
 
-    const missingMeal = await postJson(session.base, '/api/favorites', { menuItemId: 99999 });
+    const missingMeal = await postJson(session.base, '/api/favorites', { menuItemId: 99999 }, favoriteHeaders());
     assert.equal(missingMeal.status, 404);
 
-    const badBody = await postJson(session.base, '/api/favorites', {});
+    const badBody = await postJson(session.base, '/api/favorites', {}, favoriteHeaders());
     assert.equal(badBody.status, 400);
   } finally {
     await session.close();
@@ -295,9 +311,10 @@ test('favorites persist, reject duplicates, and reject unknown meals', async () 
 
   const reopened = openDatabase(file);
   try {
-    const stored = listFavorites(reopened);
+    const stored = listFavorites(reopened, CLIENT_A);
     assert.equal(stored.length, 1);
     assert.equal(stored[0].menuItem.name, 'Tofu Miso Soup');
+    assert.equal(listFavorites(reopened, CLIENT_B).length, 0);
   } finally {
     reopened.close();
     fs.rmSync(file, { force: true });
@@ -307,13 +324,24 @@ test('favorites persist, reject duplicates, and reject unknown meals', async () 
 test('favorite delete removes the row and a second delete is a 404', async () => {
   const session = await start(makeDb());
   try {
-    const created = await postJson(session.base, '/api/favorites', { menuItemId: 5 });
-    const removed = await send(session.base, `/api/favorites/${created.body.favorite.id}`, { method: 'DELETE' });
+    const created = await postJson(session.base, '/api/favorites', { menuItemId: 5 }, favoriteHeaders());
+    const stolen = await send(session.base, `/api/favorites/${created.body.favorite.id}`, {
+      method: 'DELETE',
+      headers: favoriteHeaders(CLIENT_B),
+    });
+    assert.equal(stolen.status, 404);
+    const removed = await send(session.base, `/api/favorites/${created.body.favorite.id}`, {
+      method: 'DELETE',
+      headers: favoriteHeaders(),
+    });
     assert.equal(removed.status, 200);
     assert.equal(removed.body.ok, true);
-    const listed = await send(session.base, '/api/favorites');
+    const listed = await send(session.base, '/api/favorites', { headers: favoriteHeaders() });
     assert.deepEqual(listed.body.favorites, []);
-    const again = await send(session.base, `/api/favorites/${created.body.favorite.id}`, { method: 'DELETE' });
+    const again = await send(session.base, `/api/favorites/${created.body.favorite.id}`, {
+      method: 'DELETE',
+      headers: favoriteHeaders(),
+    });
     assert.equal(again.status, 404);
   } finally {
     await session.close();

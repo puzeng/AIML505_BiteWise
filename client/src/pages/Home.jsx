@@ -31,6 +31,7 @@ export function HomePage() {
   const [prompt, setPrompt] = useState('Spicy, high protein, under $20, and not too heavy');
   const [restaurants, setRestaurants] = useState([]);
   const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +50,11 @@ export function HomePage() {
   function submit(event) {
     event.preventDefault();
     const text = prompt.trim();
-    if (!text) return;
+    if (!text) {
+      setFormError('Tell us what you want to eat.');
+      return;
+    }
+    setFormError('');
     const params = new URLSearchParams({ prompt: text, maxBudget: '20', autorun: '1' });
     navigate(`/recommendations?${params.toString()}`);
   }
@@ -67,7 +72,7 @@ export function HomePage() {
           <p className="mt-4 max-w-xl text-lg leading-8 text-bark">
             BiteWise reads a plain-language craving and only suggests meals that already exist on the sample menus. No invented dishes, no live delivery.
           </p>
-          <form onSubmit={submit} className="mt-6 space-y-3">
+          <form noValidate onSubmit={submit} className="mt-6 space-y-3">
             <label htmlFor="home-prompt" className="block text-sm font-semibold">What sounds good?</label>
             <textarea
               id="home-prompt"
@@ -75,9 +80,10 @@ export function HomePage() {
               onChange={(event) => setPrompt(event.target.value)}
               maxLength={500}
               rows={3}
-              required
+              aria-invalid={Boolean(formError)}
               className="w-full rounded-3xl border border-ink/10 bg-white px-4 py-4 text-base leading-7 shadow-sm"
             />
+            {formError ? <p role="alert" className="text-sm font-semibold text-red-900">{formError}</p> : null}
             <div className="flex flex-wrap gap-2">
               {EXAMPLES.map((example) => (
                 <button

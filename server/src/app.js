@@ -2,7 +2,7 @@ import express from 'express';
 import { addFavorite, deleteFavorite, getMenuItem, listFavorites, listMenu, listRestaurants } from './db.js';
 import { hasGeminiKey } from './env.js';
 import { GEMINI_MODEL } from './gemini.js';
-import { httpError, normalizeDietaryList, readBudget, readPositiveInt } from './preferences.js';
+import { httpError, normalizeDietaryList, readBudget, readClientToken, readPositiveInt } from './preferences.js';
 import { buildRecommendations } from './recommendations.js';
 
 function asyncHandler(fn) {
@@ -15,6 +15,13 @@ export function createApp({ db, rankMeals } = {}) {
   if (!db) throw new Error('createApp requires a database');
   const app = express();
   app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    next();
+  });
   app.use(express.json({ limit: '32kb' }));
 
   app.get('/', (_req, res) => {
@@ -63,11 +70,13 @@ export function createApp({ db, rankMeals } = {}) {
     res.json(result);
   }));
 
-  app.get('/api/favorites', (_req, res) => {
-    res.json({ favorites: listFavorites(db) });
+  app.get('/api/favorites', (req, res) => {
+    const clientToken = readClientToken(req.get('x-bitewise-client'));
+    res.json({ favorites: listFavorites(db, clientToken) });
   });
 
   app.post('/api/favorites', (req, res) => {
+    const clientToken = readClientToken(req.get('x-bitewise-client'));
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
       throw httpError(400, 'Request body must be a JSON object.');
     }
@@ -75,7 +84,7 @@ export function createApp({ db, rankMeals } = {}) {
     const item = getMenuItem(db, menuItemId);
     if (!item) throw httpError(404, 'Meal not found.');
     try {
-      const favorite = addFavorite(db, menuItemId);
+      const favorite = addFavorite(db, menuItemId, clientToken);
       res.status(201).json({ favorite: { ...favorite, menuItem: item } });
     } catch (error) {
       if (error.code === 'SQLITE_CONSTRAINT_UNIQUE' || error.code === 'SQLITE_CONSTRAINT') {
@@ -86,8 +95,9 @@ export function createApp({ db, rankMeals } = {}) {
   });
 
   app.delete('/api/favorites/:id', (req, res) => {
+    const clientToken = readClientToken(req.get('x-bitewise-client'));
     const id = readPositiveInt(req.params.id, 'Favorite id');
-    const removed = deleteFavorite(db, id);
+    const removed = deleteFavorite(db, id, clientToken);
     if (!removed) throw httpError(404, 'Favorite not found.');
     res.json({ ok: true });
   });

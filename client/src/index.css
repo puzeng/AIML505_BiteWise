@@ -44,6 +44,15 @@ h3 {
   top: 1rem;
 }
 
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 3px solid #c2410c;
+  outline-offset: 3px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

@@ -21,7 +21,7 @@ export function FavoritesPage() {
           title="No saved meals yet"
           action={<Link to="/explore" className="font-semibold text-coral-dark underline-offset-4 hover:underline">Explore the sample menus</Link>}
         >
-          Save a meal from Explore or from a meal page. It stays in the local database until you remove it.
+          Save a meal from Explore or from a meal page. It stays saved for this browser until you remove it.
         </StatusBlock>
       ) : null}
       {status === 'ready' && favorites.length > 0 ? (

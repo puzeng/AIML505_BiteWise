@@ -72,6 +72,15 @@ export function readPositiveInt(value, label) {
   return number;
 }
 
+const CLIENT_TOKEN = /^[A-Za-z0-9_-]{16,64}$/;
+
+export function readClientToken(value) {
+  if (typeof value !== 'string' || !CLIENT_TOKEN.test(value)) {
+    throw httpError(400, 'Favorites require a client id from this browser.');
+  }
+  return value;
+}
+
 export function readBudget(value) {
   if (value == null || value === '') return null;
   const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.trim()) : NaN;
