@@ -1,0 +1,21 @@
+{
+  "name": "bitewise-ai",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c orange,cyan \"npm run dev -w bitewise-server\" \"npm run dev -w bitewise-client\"",
+    "setup": "npm install && npm run seed",
+    "seed": "npm run seed -w bitewise-server",
+    "start": "npm run start -w bitewise-server",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "build": "npm run build -w bitewise-client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
